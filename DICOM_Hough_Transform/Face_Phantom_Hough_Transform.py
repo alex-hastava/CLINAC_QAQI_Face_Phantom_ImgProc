@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 
 
 # Load the DICOM file
+# Test Comment
 def load_dicom(filepath):
     dicom_file = pydicom.dcmread(filepath)
     image_array = dicom_file.pixel_array
