@@ -23,7 +23,7 @@ def preprocess_image(image):
     return blurred
 
 
-# Hough Circle Transform
+# Hough Circle Transform Algorithm
 def detect_circles(image):
     circles = cv2.HoughCircles(
         image,
