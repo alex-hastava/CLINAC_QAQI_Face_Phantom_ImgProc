@@ -72,7 +72,8 @@ def display_results(original_image, processed_image, circles):
 
 # Main Function
 def main():
-    dicom_path = "C:/Users/Hasta/OneDrive/Documents/!!SBU BME (B.E.-M.S.)/Zhang Lab (Rad Onc)/Face_Phantom_MeV_Scan.dcm"  # DICOM file path.
+    #dicom_path = "C:/Users/Hasta/OneDrive/Documents/!!SBU BME (B.E.-M.S.)/Zhang Lab (Rad Onc)/Face_Phantom_MeV_Scan.dcm"  # Personal Computer DICOM file path.
+    dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_Hough_Circle_Transform/Face_Phantom_MeV_Scan.dcm"  # SBUH Medical Physics Computer DICOM file path.
     image = load_dicom(dicom_path)
     processed_image = preprocess_image(image)
     circles = detect_circles(processed_image)
