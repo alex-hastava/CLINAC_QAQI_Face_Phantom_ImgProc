@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/DICOM_Hough_Transform.iml" filepath="$PROJECT_DIR$/.idea/DICOM_Hough_Transform.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../../Maloney_POCUS/.idea/Maloney_POCUS.iml" filepath="$PROJECT_DIR$/../../Maloney_POCUS/.idea/Maloney_POCUS.iml" />
     </modules>
   </component>
 </project>
