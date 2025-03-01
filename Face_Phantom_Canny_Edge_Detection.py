@@ -2,67 +2,108 @@ import pydicom
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
+import matplotlib
+
+# Ensure compatibility with PyCharm
+matplotlib.use("TkAgg")
 
 
 def load_dicom(dicom_path):
-    """Load DICOM file and normalize pixel data."""
+    """ Load DICOM file and extract metadata. """
     dicom_data = pydicom.dcmread(dicom_path)
-    image = dicom_data.pixel_array  # Extract pixel data as numpy array
-    # Normalize to 8-bit grayscale (0 to 255)
-    image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-    return image
+    image = dicom_data.pixel_array.astype(np.float32)  # Ensure float for processing
+
+    # Normalize pixel values to 8-bit grayscale (0-255)
+    normalized_image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+    # Extract key DICOM metadata
+    metadata = {
+        "Modality": dicom_data.get("Modality", "Unknown"),
+        "Intercept": dicom_data.get("RescaleIntercept", 0),
+        "Slope": dicom_data.get("RescaleSlope", 1),
+        "Window": f"{dicom_data.get('WindowCenter', 'N/A')} / {dicom_data.get('WindowWidth', 'N/A')}",
+        "Intensity Relation": dicom_data.get((0x0028, 0x1040), "Unknown"),
+        "Sign": dicom_data.get((0x0028, 0x1041), 1),  # Extract pixel intensity relationship sign (numerical value)
+    }
+
+    return normalized_image, metadata
 
 
-def detect_boundaries(image):
-    """
-    Detect boundaries of radiation fields and phantoms using edge detection
-    and contour finding.
-    """
-    # 1. Apply Gaussian Blur to reduce noise
-    blurred_image = cv2.GaussianBlur(image, (5, 5), sigmaX=1.5)
+def update_plot(val):
+    """ Update histogram and row indicator in the DICOM image """
+    row_index = int(val)  # Selected row
+    row_values = dicom_image[row_index, :]
 
-    # 2. Use Canny Edge Detection
-    edges = cv2.Canny(blurred_image, threshold1=50, threshold2=150)
+    # Update histogram
+    ax_hist.clear()
+    ax_hist.plot(row_values, color='blue', linewidth=1)
+    ax_hist.set_title(f"Pixel Intensity (Row {row_index})")
+    ax_hist.set_xlabel("Pixel Position")
+    ax_hist.set_ylabel("Intensity (0-255)")
+    ax_hist.grid(True)
 
-    # 3. Find contours from the edges
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # Update row indicator in the DICOM image
+    ax_img.clear()
+    ax_img.imshow(dicom_image, cmap="gray", aspect="auto")
+    ax_img.set_title("DICOM Image")
+    ax_img.axhline(row_index, color='red', linestyle='--', linewidth=1)  # Red line indicator
+    ax_img.set_xticks([])
+    ax_img.set_yticks([])
 
-    # 4. Filter contours by size or shape if needed (e.g., remove small or irrelevant artifacts)
-    filtered_contours = []
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > 500:  # Filter out very small contours with area less than 500 pixels
-            filtered_contours.append(contour)
+    # Interpret pixel intensity relationship
+    sign_desc = "Higher = More radiation" if metadata["Sign"] == 1 else "Higher = Less radiation"
 
-    # 5. Create a blank mask to draw the contours
-    mask = np.zeros_like(image)
-    cv2.drawContours(mask, filtered_contours, -1, (255, 255, 255), thickness=2)  # Draw contours on the mask
+    # Update metadata display
+    ax_meta.clear()
+    ax_meta.axis("off")
+    ax_meta.set_title("Metadata", fontsize=12)
 
-    return mask, filtered_contours  # Mask with boundaries and the extracted contours
+    # Updated multiline text with pixel relationship
+    text = "\n".join([
+        f"Modality: {metadata['Modality']}",
+        f"Intercept / Slope: {metadata['Intercept']} / {metadata['Slope']}",
+        f"Window: {metadata['Window']}",
+        #f"Intensity Relation: ",
+        #f"{metadata['Intensity Relation']}",
+        f"{metadata['Sign']}",
+        f"{sign_desc}",
+    ])
+
+    # Display text on the metadata panel
+    ax_meta.text(0, 0.9, text, fontsize=10, verticalalignment="top", horizontalalignment="left",
+                 transform=ax_meta.transAxes)
+
+    fig.canvas.draw_idle()
 
 
 def main():
-    # Path to the DICOM file
+    global dicom_image, metadata, fig, ax_img, ax_hist, ax_meta, slider
+
+    # Path to DICOM file
     dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
 
-    # Step 1: Load DICOM file
-    dicom_image = load_dicom(dicom_path)
+    # Load DICOM image and metadata
+    dicom_image, metadata = load_dicom(dicom_path)
 
-    # Step 2: Detect boundaries of radiation fields and phantoms
-    boundaries, contours = detect_boundaries(dicom_image)
+    # Create figure with three sections (DICOM image, histogram, metadata)
+    fig, (ax_img, ax_hist, ax_meta) = plt.subplots(1, 3, figsize=(20, 10), gridspec_kw={'width_ratios': [3, 3, 1]})
+    # Here, the first two panels are wider (3 parts each), and the last one (metadata) is smaller (1 part).
 
-    # Step 3: Display the original image and detected boundaries side by side
-    plt.figure(figsize=(12, 6))
 
-    plt.subplot(1, 2, 1)
-    plt.title("Original DICOM Image")
-    plt.imshow(dicom_image, cmap="gray")
+    plt.subplots_adjust(bottom=0.25)  # Space for slider
 
-    plt.subplot(1, 2, 2)
-    plt.title("Detected Boundaries")
-    plt.imshow(boundaries, cmap="gray")
+    # Add slider for row selection
+    ax_slider = plt.axes([0.2, 0.1, 0.65, 0.03])
+    slider = Slider(ax_slider, 'Row', 0, dicom_image.shape[0] - 1, valinit=dicom_image.shape[0] // 2, valstep=1)
 
-    plt.show()
+    # Connect slider to update function
+    slider.on_changed(update_plot)
+
+    # Initialize plot
+    update_plot(slider.val)
+
+    plt.show(block=True)
 
 
 if __name__ == "__main__":
