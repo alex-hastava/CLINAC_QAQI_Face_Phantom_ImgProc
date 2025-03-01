@@ -80,8 +80,11 @@ def update_plot(val):
 def main():
     global dicom_image, metadata, fig, ax_img, ax_hist, ax_meta, slider
 
-    # Path to DICOM file
-    dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
+    # Path to DICOM file from Alex's PC
+    dicom_path = "C:/Users/Hasta/PycharmProjects/Face_Phantom_Canny_Edge/Face_Phantom_MeV_Scan.dcm"
+
+    # Path to DICOM file from Rad Onc PC
+    #dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
 
     # Load DICOM image and metadata
     dicom_image, metadata = load_dicom(dicom_path)

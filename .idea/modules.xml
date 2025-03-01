@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/Face_Phantom_Canny_Edge.iml" filepath="$PROJECT_DIR$/.idea/Face_Phantom_Canny_Edge.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../Face_Phantom_Hough_Circle_Transform/.idea/Face_Phantom_Hough_Circle_Transform.iml" filepath="$PROJECT_DIR$/../Face_Phantom_Hough_Circle_Transform/.idea/Face_Phantom_Hough_Circle_Transform.iml" />
     </modules>
   </component>
 </project>
