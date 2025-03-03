@@ -2,112 +2,102 @@ import pydicom
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
-import matplotlib
-
-# Ensure compatibility with PyCharm
-matplotlib.use("TkAgg")
-
+from scipy.signal import find_peaks
 
 def load_dicom(dicom_path):
-    """ Load DICOM file and extract metadata. """
+    """ Load DICOM file, apply Gaussian smoothing, normalize, sharpen, highlight edges, and apply Canny edge detection. """
     dicom_data = pydicom.dcmread(dicom_path)
-    image = dicom_data.pixel_array.astype(np.float32)  # Ensure float for processing
+    image = dicom_data.pixel_array.astype(np.float32)
 
-    # Normalize pixel values to 8-bit grayscale (0-255)
-    normalized_image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    # Step 1: Apply Gaussian Blur to reduce noise
+    smoothed_image = cv2.GaussianBlur(image, (3, 3), 1)
 
-    # Extract key DICOM metadata
-    metadata = {
-        "Modality": dicom_data.get("Modality", "Unknown"),
-        "Intercept": dicom_data.get("RescaleIntercept", 0),
-        "Slope": dicom_data.get("RescaleSlope", 1),
-        "Window": f"{dicom_data.get('WindowCenter', 'N/A')} / {dicom_data.get('WindowWidth', 'N/A')}",
-        "Intensity Relation": dicom_data.get((0x0028, 0x1040), "Unknown"),
-        "Sign": dicom_data.get((0x0028, 0x1041), 1),  # Extract pixel intensity relationship sign (numerical value)
-    }
+    # Step 2: Apply the Laplacian operator for edge enhancement
+    laplacian_image = cv2.Laplacian(smoothed_image, cv2.CV_32F)
 
-    return normalized_image, metadata
+    # Step 3: Convert the result to absolute values (to capture both positive and negative gradients)
+    laplacian_image_abs = cv2.convertScaleAbs(laplacian_image)
 
+    # Step 4: Normalize pixel values to 8-bit grayscale (0-255)
+    normalized_image = cv2.normalize(laplacian_image_abs, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
-def update_plot(val):
-    """ Update histogram and row indicator in the DICOM image """
-    row_index = int(val)  # Selected row
-    row_values = dicom_image[row_index, :]
+    # Step 5: (Optional) Set pixels with value < 50 to zero
+    normalized_image[normalized_image < 200] = 0
 
-    # Update histogram
-    ax_hist.clear()
-    ax_hist.plot(row_values, color='blue', linewidth=1)
-    ax_hist.set_title(f"Pixel Intensity (Row {row_index})")
-    ax_hist.set_xlabel("Pixel Position")
-    ax_hist.set_ylabel("Intensity (0-255)")
-    ax_hist.grid(True)
+    # Step 6: Apply aggressive sharpening (stronger sharpening kernel)
+    sharpen_kernel = np.array([[ -2, -3,  -2],
+                               [-3,  25, -3],
+                               [ -2, -3,  -2]], dtype=np.float32)
+    sharpened_image = cv2.filter2D(normalized_image, -1, sharpen_kernel)
 
-    # Update row indicator in the DICOM image
-    ax_img.clear()
-    ax_img.imshow(dicom_image, cmap="gray", aspect="auto")
-    ax_img.set_title("DICOM Image")
-    ax_img.axhline(row_index, color='red', linestyle='--', linewidth=1)  # Red line indicator
-    ax_img.set_xticks([])
-    ax_img.set_yticks([])
+    # Step 7: Apply CLAHE (Adaptive Histogram Equalization) to enhance contrast in edge regions
+    clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(3, 3))
+    enhanced_image = clahe.apply(sharpened_image)
 
-    # Interpret pixel intensity relationship
-    sign_desc = "Higher = More radiation" if metadata["Sign"] == 1 else "Higher = Less radiation"
+    # Step 8: Increase the contrast further by scaling pixel values
+    enhanced_image = cv2.convertScaleAbs(enhanced_image, alpha=1.0, beta=0)
 
-    # Update metadata display
-    ax_meta.clear()
-    ax_meta.axis("off")
-    ax_meta.set_title("Metadata", fontsize=12)
+    # Step 10: Apply thresholding to make edges binary (only 0 or 255)
+    threshold_value = 210  # Set a reasonable threshold value to detect edges
+    _, thresholded_image = cv2.threshold(enhanced_image, threshold_value, 255, cv2.THRESH_BINARY)
 
-    # Updated multiline text with pixel relationship
-    text = "\n".join([
-        f"Modality: {metadata['Modality']}",
-        f"Intercept / Slope: {metadata['Intercept']} / {metadata['Slope']}",
-        f"Window: {metadata['Window']}",
-        #f"Intensity Relation: ",
-        #f"{metadata['Intensity Relation']}",
-        f"{metadata['Sign']}",
-        f"{sign_desc}",
-    ])
+    # Print out pixel values of the thresholded image for debugging
+    print("Pixel values of the thresholded image:")
+    print(np.unique(thresholded_image))  # Should be only 0 and 255
 
-    # Display text on the metadata panel
-    ax_meta.text(0, 0.9, text, fontsize=10, verticalalignment="top", horizontalalignment="left",
-                 transform=ax_meta.transAxes)
+    # Step 11: Extract contours to obtain an exact outline.
+    contours, _ = cv2.findContours(thresholded_image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    outline_image = np.zeros_like(thresholded_image)
+    cv2.drawContours(outline_image, contours, -1, 255, 1)
 
-    fig.canvas.draw_idle()
-
+    return image, smoothed_image, laplacian_image_abs, normalized_image, sharpened_image, enhanced_image, thresholded_image, outline_image
 
 def main():
-    global dicom_image, metadata, fig, ax_img, ax_hist, ax_meta, slider
+    # Path to DICOM file (update as needed)
+    dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
 
-    # Path to DICOM file from Alex's PC
-    dicom_path = "C:/Users/Hasta/PycharmProjects/Face_Phantom_Canny_Edge/Face_Phantom_MeV_Scan.dcm"
+    # Load DICOM and apply processing
+    original_image, smoothed_image, laplacian_image, normalized_image, sharpened_image, enhanced_image, thresholded_image, outline_image = load_dicom(dicom_path)
 
-    # Path to DICOM file from Rad Onc PC
-    #dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
+    # Display the images step-by-step in a single figure with 8 subplots
+    fig, axes = plt.subplots(1, 8, figsize=(40, 6))
 
-    # Load DICOM image and metadata
-    dicom_image, metadata = load_dicom(dicom_path)
+    axes[0].imshow(original_image, cmap='gray')
+    axes[0].set_title("Original Image")
+    axes[0].axis("off")
 
-    # Create figure with three sections (DICOM image, histogram, metadata)
-    fig, (ax_img, ax_hist, ax_meta) = plt.subplots(1, 3, figsize=(20, 10), gridspec_kw={'width_ratios': [3, 3, 1]})
-    # Here, the first two panels are wider (3 parts each), and the last one (metadata) is smaller (1 part).
+    axes[1].imshow(smoothed_image, cmap='gray')
+    axes[1].set_title("Smoothed Image (Gaussian Blur)")
+    axes[1].axis("off")
 
+    axes[2].imshow(laplacian_image, cmap='gray')
+    axes[2].set_title("Laplacian Image")
+    axes[2].axis("off")
 
-    plt.subplots_adjust(bottom=0.25)  # Space for slider
+    axes[3].imshow(normalized_image, cmap='gray')
+    axes[3].set_title("Normalized Image")
+    axes[3].axis("off")
 
-    # Add slider for row selection
-    ax_slider = plt.axes([0.2, 0.1, 0.65, 0.03])
-    slider = Slider(ax_slider, 'Row', 0, dicom_image.shape[0] - 1, valinit=dicom_image.shape[0] // 2, valstep=1)
+    axes[4].imshow(sharpened_image, cmap='gray')
+    axes[4].set_title("Sharpened Image")
+    axes[4].axis("off")
 
-    # Connect slider to update function
-    slider.on_changed(update_plot)
+    axes[5].imshow(enhanced_image, cmap='gray')
+    axes[5].set_title("Enhanced Image (CLAHE)")
+    axes[5].axis("off")
 
-    # Initialize plot
-    update_plot(slider.val)
+    axes[6].imshow(thresholded_image, cmap='gray')
+    axes[6].set_title("Thresholded Edge Detection")
+    axes[6].axis("off")
 
-    plt.show(block=True)
+    axes[7].imshow(outline_image, cmap='gray')
+    axes[7].set_title("Exact Outline")
+    axes[7].axis("off")
 
+    plt.tight_layout()
+    plt.show()
+
+    # (Additional code for histograms and saving the image can follow here)
 
 if __name__ == "__main__":
     main()
