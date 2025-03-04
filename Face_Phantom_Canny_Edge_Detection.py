@@ -2,102 +2,144 @@ import pydicom
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-from scipy.signal import find_peaks
 
-def load_dicom(dicom_path):
-    """ Load DICOM file, apply Gaussian smoothing, normalize, sharpen, highlight edges, and apply Canny edge detection. """
+
+def load_dicom(dicom_path, save_path="contour_output.png"):
+    """Load DICOM, enhance contrast, extract cutoff contours."""
+    # Load DICOM image
     dicom_data = pydicom.dcmread(dicom_path)
     image = dicom_data.pixel_array.astype(np.float32)
 
-    # Step 1: Apply Gaussian Blur to reduce noise
-    smoothed_image = cv2.GaussianBlur(image, (3, 3), 1)
+    # Step 1: Normalize image (0-255)
+    image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
 
-    # Step 2: Apply the Laplacian operator for edge enhancement
-    laplacian_image = cv2.Laplacian(smoothed_image, cv2.CV_32F)
+    # Step 2: Apply CLAHE for contrast enhancement
+    clahe = cv2.createCLAHE(clipLimit=2, tileGridSize=(50, 50))
+    enhanced_image = clahe.apply(image)
 
-    # Step 3: Convert the result to absolute values (to capture both positive and negative gradients)
-    laplacian_image_abs = cv2.convertScaleAbs(laplacian_image)
+    # Step 3: Apply Gaussian Blur (preserve structures while reducing noise)
+    blurred_image = cv2.GaussianBlur(enhanced_image, (7, 7), 0)
 
-    # Step 4: Normalize pixel values to 8-bit grayscale (0-255)
-    normalized_image = cv2.normalize(laplacian_image_abs, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+    # Step 4: Edge Detection using Adaptive Canny
+    median_val = np.median(blurred_image)
+    lower = int(max(0, 0.66 * median_val))
+    upper = int(min(255, 1.33 * median_val))
+    edges = cv2.Canny(blurred_image, lower, upper)
 
-    # Step 5: (Optional) Set pixels with value < 50 to zero
-    normalized_image[normalized_image < 200] = 0
+    # Step 5: Adaptive Thresholding (Highlight collimator/light field)
+    adaptive_thresh = cv2.adaptiveThreshold(
+        enhanced_image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, 7, 7)
 
-    # Step 6: Apply aggressive sharpening (stronger sharpening kernel)
-    sharpen_kernel = np.array([[ -2, -3,  -2],
-                               [-3,  25, -3],
-                               [ -2, -3,  -2]], dtype=np.float32)
-    sharpened_image = cv2.filter2D(normalized_image, -1, sharpen_kernel)
+    # Step 6: Combine Canny edges and thresholded image
+    combined_edges = cv2.bitwise_or(adaptive_thresh, edges)
 
-    # Step 7: Apply CLAHE (Adaptive Histogram Equalization) to enhance contrast in edge regions
-    clahe = cv2.createCLAHE(clipLimit=5.0, tileGridSize=(3, 3))
-    enhanced_image = clahe.apply(sharpened_image)
+    # Step 7: Morphological Closing (Fill small gaps)
+    kernel = np.ones((2, 2), np.uint8)
+    morphed = cv2.morphologyEx(combined_edges, cv2.MORPH_CLOSE, kernel)
 
-    # Step 8: Increase the contrast further by scaling pixel values
-    enhanced_image = cv2.convertScaleAbs(enhanced_image, alpha=1.0, beta=0)
+    # Step 8: Masking the light field (removing noise inside the light field)
+    _, light_field_mask = cv2.threshold(enhanced_image, 35, 255, cv2.THRESH_BINARY)
 
-    # Step 10: Apply thresholding to make edges binary (only 0 or 255)
-    threshold_value = 210  # Set a reasonable threshold value to detect edges
-    _, thresholded_image = cv2.threshold(enhanced_image, threshold_value, 255, cv2.THRESH_BINARY)
+    # Remove light field area from the processed edges
+    morphed[light_field_mask == 255] = 0  # Set the light field region to black (no edges)
 
-    # Print out pixel values of the thresholded image for debugging
-    print("Pixel values of the thresholded image:")
-    print(np.unique(thresholded_image))  # Should be only 0 and 255
+    # Step 9: Set all non-zero values in morphed to 255
+    morphed[morphed > 0] = 255  # Set any value > 0 to 255
+    morphed[morphed == 0] = 0  # Keep 0s as 0
 
-    # Step 11: Extract contours to obtain an exact outline.
-    contours, _ = cv2.findContours(thresholded_image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    outline_image = np.zeros_like(thresholded_image)
-    cv2.drawContours(outline_image, contours, -1, 255, 1)
+    # Debug Step: Ensure contours exist and show the combined edges plot
+    print(f"Combined Edges Image (after processing):")
+    plt.figure(figsize=(6, 6))
+    plt.imshow(morphed, cmap='gray')
+    plt.title("Processed Edges (No Light Field Noise)")
+    plt.axis("off")
+    plt.show()
 
-    return image, smoothed_image, laplacian_image_abs, normalized_image, sharpened_image, enhanced_image, thresholded_image, outline_image
+    # Return the processed image before inversion
+    return image, enhanced_image, combined_edges, morphed
+
+
+def convert_to_color(morphed_image):
+    """Convert the morphed grayscale image back to 32-bit color format."""
+    # Convert morphed (grayscale) to 3 channels (RGB) so color can be visualized
+    color_image = cv2.cvtColor(morphed_image.astype(np.uint8), cv2.COLOR_GRAY2BGR)
+
+    # Convert to 32-bit (float32) format to see the colors clearly
+    color_image = color_image.astype(np.float32) / 255.0  # Normalize to range [0, 1]
+
+    return color_image
+
+
+def detect_circles_and_rectangle(morphed_image, color_morphed_image):
+    """Detect circles using Hough Transform and draw a rectangle around the light field."""
+    # Detect circles using Hough Transform
+    circles = cv2.HoughCircles(
+        morphed_image,
+        cv2.HOUGH_GRADIENT,
+        dp=1.4,  # Inverse ratio of accumulator resolution to image resolution
+        minDist=20,  # Minimum distance between circle centers
+        param1=130,  # Higher threshold for edge detection
+        param2=30,  # Accumulator threshold for circle detection
+        minRadius=20,  # Minimum circle radius
+        maxRadius=60  # Maximum circle radius
+    )
+
+    # Draw the detected circles in color (on the color version of the image)
+    if circles is not None:
+        circles = np.round(circles[0, :]).astype("int")
+        for (x, y, r) in circles:
+            cv2.circle(color_morphed_image, (x, y), r, (255, 0, 0), 4)  # Draw circle in red
+            # Calculate and display pixel distance (radius) in the center of the circle
+            distance_text = f"{r}"
+            cv2.putText(color_morphed_image, distance_text, (x - 20, y + 15), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+
+    # Find the contours and draw a rectangle around the light field (based on intensity mask)
+    contours, _ = cv2.findContours(morphed_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    for contour in contours:
+        if cv2.contourArea(contour) > 500:  # Filter small contours
+            (x, y, w, h) = cv2.boundingRect(contour)
+            cv2.rectangle(color_morphed_image, (x, y), (x + w, y + h), (0, 255, 0), 2)  # Draw rectangle in green
+
+    # Debug Step: Show the final output with circles and rectangle
+    plt.figure(figsize=(6, 6))
+    plt.imshow(color_morphed_image)
+    plt.title("Circles Detected and Rectangle around Light Field")
+    plt.axis("off")
+    plt.show()
+
 
 def main():
-    # Path to DICOM file (update as needed)
     dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
+    save_path = "C:/Users/ahastava/PycharmProjects/contour_output.png"
 
-    # Load DICOM and apply processing
-    original_image, smoothed_image, laplacian_image, normalized_image, sharpened_image, enhanced_image, thresholded_image, outline_image = load_dicom(dicom_path)
+    # Process DICOM image
+    original_image, enhanced_image, combined_edges, morphed_image = load_dicom(dicom_path, save_path)
 
-    # Display the images step-by-step in a single figure with 8 subplots
-    fig, axes = plt.subplots(1, 8, figsize=(40, 6))
+    # Convert the processed grayscale morphed image to color format for visualization
+    color_morphed_image = convert_to_color(morphed_image)
 
-    axes[0].imshow(original_image, cmap='gray')
-    axes[0].set_title("Original Image")
-    axes[0].axis("off")
+    # Detect circles and rectangles on the morphed image (in color)
+    detect_circles_and_rectangle(morphed_image, color_morphed_image)
 
-    axes[1].imshow(smoothed_image, cmap='gray')
-    axes[1].set_title("Smoothed Image (Gaussian Blur)")
-    axes[1].axis("off")
+    # Save the final 8-bit grayscale output (morphed image without color)
+    cv2.imwrite(save_path, morphed_image)  # Save the 8-bit grayscale (processed) image
+    print(f"Final output saved to {save_path}")
 
-    axes[2].imshow(laplacian_image, cmap='gray')
-    axes[2].set_title("Laplacian Image")
-    axes[2].axis("off")
+    # Display results
+    fig, axes = plt.subplots(1, 3, figsize=(20, 5))
+    titles = ["Original", "Enhanced", "Processed Edges with Circles and Rectangle"]
+    images = [original_image, enhanced_image, color_morphed_image]
 
-    axes[3].imshow(normalized_image, cmap='gray')
-    axes[3].set_title("Normalized Image")
-    axes[3].axis("off")
-
-    axes[4].imshow(sharpened_image, cmap='gray')
-    axes[4].set_title("Sharpened Image")
-    axes[4].axis("off")
-
-    axes[5].imshow(enhanced_image, cmap='gray')
-    axes[5].set_title("Enhanced Image (CLAHE)")
-    axes[5].axis("off")
-
-    axes[6].imshow(thresholded_image, cmap='gray')
-    axes[6].set_title("Thresholded Edge Detection")
-    axes[6].axis("off")
-
-    axes[7].imshow(outline_image, cmap='gray')
-    axes[7].set_title("Exact Outline")
-    axes[7].axis("off")
+    for ax, img, title in zip(axes, images, titles):
+        ax.imshow(img, cmap='gray')
+        ax.set_title(title)
+        ax.axis("off")
 
     plt.tight_layout()
     plt.show()
 
-    # (Additional code for histograms and saving the image can follow here)
 
 if __name__ == "__main__":
     main()
