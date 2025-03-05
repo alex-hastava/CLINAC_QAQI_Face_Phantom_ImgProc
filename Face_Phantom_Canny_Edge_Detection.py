@@ -104,14 +104,14 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
             diameter_mm = 2 * radius_mm  # Diameter in mm
 
             # Print the radius in pixels and the diameter in mm
-            print(f"Circle at ({x}, {y}) - Radius: {r} pixels, Diameter: {diameter_mm:.3f} mm")
+            print(f"Circle at ({x}, {y}) - Radius: {r} pixels, Diameter: {diameter_mm:.2f} mm")
 
             # Draw circle in red
             cv2.circle(color_morphed_image, (x, y), r, (255, 0, 0), 4)
 
             # Calculate and display the diameter in mm at the center of the circle
-            distance_text = f"{diameter_mm:.3f}"  # Show the diameter with 2 decimal places
-            cv2.putText(color_morphed_image, distance_text, (x - 15, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+            distance_text = f"{diameter_mm:.2f}"  # Show the diameter with 2 decimal places
+            cv2.putText(color_morphed_image, distance_text, (x - 20, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
 
     distance_unit = f"Units: mm (diameter)"
     cv2.putText(color_morphed_image, distance_unit, (450, 1100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3)
