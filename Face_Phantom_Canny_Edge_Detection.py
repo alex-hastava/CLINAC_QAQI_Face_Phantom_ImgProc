@@ -49,7 +49,6 @@ def load_dicom(dicom_path, save_path="contour_output.png"):
     morphed[morphed == 0] = 0  # Keep 0s as 0
 
     # Debug Step: Ensure contours exist and show the combined edges plot
-    print(f"Combined Edges Image (after processing):")
     plt.figure(figsize=(6, 6))
     plt.imshow(morphed, cmap='gray')
     plt.title("Processed Edges (No Light Field Noise)")
@@ -71,8 +70,19 @@ def convert_to_color(morphed_image):
     return color_image
 
 
-def detect_circles_and_rectangle(morphed_image, color_morphed_image):
+def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data):
     """Detect circles using Hough Transform and draw a rectangle around the light field."""
+
+    # Extract PixelSpacing from the DICOM metadata
+    # Extract PixelSpacing from the DICOM metadata using the correct tag (3002,0011)
+
+    pixel_spacing = dicom_data.get((0x3002, 0x0011))  # Tag (3002, 0011)
+    # Assuming the spacing is the same for both row and column
+    pixel_spacing = float(pixel_spacing[0])  # Use the first value for both row and column spacing
+
+    # Now pixel_spacing will be a list of [row_spacing, col_spacing] in mm/pixel
+    print(f"Pixel Spacing (Rows/Cols): {pixel_spacing:.3f} mm")
+
     # Detect circles using Hough Transform
     circles = cv2.HoughCircles(
         morphed_image,
@@ -89,10 +99,22 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image):
     if circles is not None:
         circles = np.round(circles[0, :]).astype("int")
         for (x, y, r) in circles:
-            cv2.circle(color_morphed_image, (x, y), r, (255, 0, 0), 4)  # Draw circle in red
-            # Calculate and display pixel distance (radius) in the center of the circle
-            distance_text = f"{r}"
-            cv2.putText(color_morphed_image, distance_text, (x - 20, y + 15), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 2)
+            # Convert the radius from pixels to mm
+            radius_mm = float(r) * pixel_spacing  # Assuming the spacing is the same for both row and column
+            diameter_mm = 2 * radius_mm  # Diameter in mm
+
+            # Print the radius in pixels and the diameter in mm
+            print(f"Circle at ({x}, {y}) - Radius: {r} pixels, Diameter: {diameter_mm:.3f} mm")
+
+            # Draw circle in red
+            cv2.circle(color_morphed_image, (x, y), r, (255, 0, 0), 4)
+
+            # Calculate and display the diameter in mm at the center of the circle
+            distance_text = f"{diameter_mm:.3f}"  # Show the diameter with 2 decimal places
+            cv2.putText(color_morphed_image, distance_text, (x - 15, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+
+    distance_unit = f"Units: mm (diameter)"
+    cv2.putText(color_morphed_image, distance_unit, (450, 1100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3)
 
     # Find the contours and draw a rectangle around the light field (based on intensity mask)
     contours, _ = cv2.findContours(morphed_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -115,13 +137,14 @@ def main():
     save_path = "C:/Users/ahastava/PycharmProjects/contour_output.png"
 
     # Process DICOM image
+    dicom_data = pydicom.dcmread(dicom_path)  # Load the DICOM data
     original_image, enhanced_image, combined_edges, morphed_image = load_dicom(dicom_path, save_path)
 
     # Convert the processed grayscale morphed image to color format for visualization
     color_morphed_image = convert_to_color(morphed_image)
 
     # Detect circles and rectangles on the morphed image (in color)
-    detect_circles_and_rectangle(morphed_image, color_morphed_image)
+    detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
 
     # Save the final 8-bit grayscale output (morphed image without color)
     cv2.imwrite(save_path, morphed_image)  # Save the 8-bit grayscale (processed) image
