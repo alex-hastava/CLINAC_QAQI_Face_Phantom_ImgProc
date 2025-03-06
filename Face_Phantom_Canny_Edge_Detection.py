@@ -133,8 +133,13 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
 
 
 def main():
-    dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
-    save_path = "C:/Users/ahastava/PycharmProjects/contour_output.png"
+    #Rad_Onc_PC
+    #dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
+    #save_path = "C:/Users/ahastava/PycharmProjects/contour_output.png"
+
+    #Alex's_Surface_Pro_7_PC
+    dicom_path = "C:/Users/Hasta/OneDrive/Documents/GitHub_Repos/CLINAC_QAQI_Face_Phantom_ImgProc/Face_Phantom_MeV_Scan.dcm"
+    save_path = "C:/Users/Hasta/OneDrive/Documents/GitHub_Repos/CLINAC_QAQI_Face_Phantom_ImgProc/contour_output.png"
 
     # Process DICOM image
     dicom_data = pydicom.dcmread(dicom_path)  # Load the DICOM data
