@@ -92,11 +92,11 @@ def update_plot(val):
     fig.canvas.draw_idle()
 
     # Get the current figure manager and Tk window
-    manager = plt.get_current_fig_manager()
-    window = manager.canvas.manager.window
+    #manager = plt.get_current_fig_manager()
+    #window = manager.canvas.manager.window
 
     # Make the window full screen using the Tkinter window attributes
-    window.attributes('-fullscreen', True)
+    #window.attributes('-fullscreen', True)
 
 
 def main():

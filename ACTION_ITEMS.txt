@@ -1,0 +1,5 @@
+3/7/25 Next Steps -->
+
+If not RT or DICOM compliant,
+prompt user for info (SAD, SID),
+or set defaults SAD=1000, SID=1500.

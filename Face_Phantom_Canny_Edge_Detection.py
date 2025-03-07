@@ -101,7 +101,7 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
         for (x, y, r) in circles:
             # Convert the radius from pixels to mm
             radius_mm = float(r) * pixel_spacing  # Assuming the spacing is the same for both row and column
-            diameter_mm = 2 * radius_mm  # Diameter in mm
+            diameter_mm = 2/3 * (2 * radius_mm)  # Diameter in mm scaled down to 2/3 SID to convert to SAD
 
             # Print the radius in pixels and the diameter in mm
             print(f"Circle at ({x}, {y}) - Radius: {r} pixels, Diameter: {diameter_mm:.2f} mm")
@@ -134,12 +134,12 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
 
 def main():
     #Rad_Onc_PC
-    #dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
-    #save_path = "C:/Users/ahastava/PycharmProjects/contour_output.png"
+    dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
+    save_path = "C:/Users/ahastava/PycharmProjects/contour_output.png"
 
     #Alex's_Surface_Pro_7_PC
-    dicom_path = "C:/Users/Hasta/OneDrive/Documents/!!SBU BME (B.E.-M.S.)/CLINAC_QAQI_Face_Phantom_ImgProc/Face_Phantom_MeV_Scan.dcm"
-    save_path = "C:/Users/Hasta/OneDrive/Documents/!!SBU BME (B.E.-M.S.)/CLINAC_QAQI_Face_Phantom_ImgProc/contour_output.png"
+    #dicom_path = "C:/Users/Hasta/OneDrive/Documents/!!SBU BME (B.E.-M.S.)/CLINAC_QAQI_Face_Phantom_ImgProc/Face_Phantom_MeV_Scan.dcm"
+    #save_path = "C:/Users/Hasta/OneDrive/Documents/!!SBU BME (B.E.-M.S.)/CLINAC_QAQI_Face_Phantom_ImgProc/contour_output.png"
 
     # Process DICOM image
     dicom_data = pydicom.dcmread(dicom_path)  # Load the DICOM data
