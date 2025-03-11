@@ -112,6 +112,7 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
             # Calculate and display the diameter in mm at the center of the circle
             distance_text = f"{diameter_mm:.2f}"  # Show the diameter with 2 decimal places
             cv2.putText(color_morphed_image, distance_text, (x - 20, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+        np.save("bb_pixel_coords.npy", circles)  # Save detected circles
 
     distance_unit = f"Units: mm (diameter)"
     cv2.putText(color_morphed_image, distance_unit, (450, 1100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3)
@@ -133,13 +134,9 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
 
 
 def main():
-    #Rad_Onc_PC
+    # Rad_Onc_PC
     dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
     save_path = "C:/Users/ahastava/PycharmProjects/contour_output.png"
-
-    #Alex's_Surface_Pro_7_PC
-    #dicom_path = "C:/Users/Hasta/OneDrive/Documents/!!SBU BME (B.E.-M.S.)/CLINAC_QAQI_Face_Phantom_ImgProc/Face_Phantom_MeV_Scan.dcm"
-    #save_path = "C:/Users/Hasta/OneDrive/Documents/!!SBU BME (B.E.-M.S.)/CLINAC_QAQI_Face_Phantom_ImgProc/contour_output.png"
 
     # Process DICOM image
     dicom_data = pydicom.dcmread(dicom_path)  # Load the DICOM data
