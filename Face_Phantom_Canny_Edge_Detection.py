@@ -95,24 +95,52 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
         maxRadius=60  # Maximum circle radius
     )
 
+    image_size = color_morphed_image.shape[0]  # Number of pixels in one dimension
+
+    # Initialize an empty list to store the circle data (offset_x, offset_y, radius_mm)
+    circle_data = []
+
     # Draw the detected circles in color (on the color version of the image)
     if circles is not None:
         circles = np.round(circles[0, :]).astype("int")
-        for (x, y, r) in circles:
-            # Convert the radius from pixels to mm
-            radius_mm = float(r) * pixel_spacing  # Assuming the spacing is the same for both row and column
-            diameter_mm = 2/3 * (2 * radius_mm)  # Diameter in mm scaled down to 2/3 SID to convert to SAD
 
-            # Print the radius in pixels and the diameter in mm
-            print(f"Circle at ({x}, {y}) - Radius: {r} pixels, Diameter: {diameter_mm:.2f} mm")
+        # Compute the scaled image center in mm
+        image_center_x_mm = (2 / 3) * ((image_size / 2) * pixel_spacing)
+        image_center_y_mm = (2 / 3) * ((image_size / 2) * pixel_spacing)
+
+        for (x, y, r) in circles:
+            # Convert pixel coordinates to mm and scale to 2/3
+            x_mm = (2 / 3) * (x * pixel_spacing)
+            y_mm = (2 / 3) * (y * pixel_spacing)
+
+            # Convert radius from pixels to mm and scale to 2/3 SAD
+            radius_mm = (2 / 3) * (r * pixel_spacing)
+            diameter_mm = 2 * radius_mm  # Directly use scaled radius for diameter
+
+            # Print the converted coordinates and diameter
+            print(
+                f"Circle at ({x_mm:.2f} mm, {y_mm:.2f} mm) - Radius: {radius_mm:.2f} mm, Diameter: {diameter_mm:.2f} mm")
 
             # Draw circle in red
             cv2.circle(color_morphed_image, (x, y), r, (255, 0, 0), 4)
 
-            # Calculate and display the diameter in mm at the center of the circle
-            distance_text = f"{diameter_mm:.2f}"  # Show the diameter with 2 decimal places
-            cv2.putText(color_morphed_image, distance_text, (x - 20, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
-        np.save("bb_pixel_coords.npy", circles)  # Save detected circles
+            # Calculate the offsets from the scaled beam center (in mm)
+            offset_x = x_mm - image_center_x_mm
+            offset_y = y_mm - image_center_y_mm
+
+            # Print the offsets (in mm)
+            print(f"Offset from beam center: X = {offset_x:.2f} mm, Y = {offset_y:.2f} mm")
+
+            # Display the diameter in mm at the center of the circle
+            distance_text = f"{diameter_mm:.2f}"  # Show diameter with 2 decimal places
+            cv2.putText(color_morphed_image, distance_text, (x - 20, y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0),
+                        2)
+
+            # Save the circle's data (offset_x, offset_y, radius_mm)
+            circle_data.append([offset_x, offset_y, radius_mm])
+
+    # Save the circle data (offsets and radius) to a .npy file
+    np.save("my_special_phantom_bbs.npy", circle_data)  # Save offsets and radius data
 
     distance_unit = f"Units: mm (diameter)"
     cv2.putText(color_morphed_image, distance_unit, (450, 1100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3)

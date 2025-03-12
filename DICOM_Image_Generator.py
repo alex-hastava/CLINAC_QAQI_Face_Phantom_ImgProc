@@ -1,17 +1,9 @@
-from pylinac.core.image_generator.utils import generate_winstonlutz_multi_bb_multi_field
-from pylinac.core.image_generator.simulators import Simulator
+from pylinac.core.image_generator import layers, generate_winstonlutz_multi_bb_multi_field
 from pylinac.core import image_generator
-import json
 import numpy as np
 
-# Define the AS5000 class which inherits from Simulator
-class AS5000(Simulator):
-    pixel_size = 0.336  # Pixel size for the simulator
-    shape = (1280, 1280)  # Shape of the simulator's image (1280x1280)
-
-# Instantiate the simulator & base layer (AS5000 in this case)
-simulator = AS5000()
-field_layer = image_generator.layers.FilteredFieldLayer
+# Define field size in mm (e.g., based on your DICOM metadata, this might vary)
+field_size_mm = (140, 140)  # Example field size
 
 # Output directory to save the images
 dir_out = "C:/Users/ahastava/PycharmProjects/CLINAC_QAQI_Face_Phantom_ImgProc/wl_images"
@@ -38,7 +30,7 @@ bb_offsets = []
 for x, z, diameter in circle_data:
     # Convert center coordinates from pixels to mm
     x_mm = 2/3 * (x * pixel_spacing)
-    y_mm = 0
+    y_mm = 0  # You might want to adjust this if the y-coordinate is actually needed
     z_mm = 2/3 * (z * pixel_spacing)
 
     # Calculate the 3D offsets from the isocenter
@@ -81,12 +73,6 @@ print("Saved my_special_phantom_bbs.npy successfully!")
 # Now bb_offsets contains the 3D offsets of the ball bearings in mm, relative to the isocenter.
 # print(bb_offsets)
 
-# Define field size in mm (e.g., based on your DICOM metadata, this might vary)
-field_size_mm = (147, 147)  # Example field size
-
-# Define additional layers, for example, to apply blurring or noise (optional)
-final_layers = None  # No additional layers applied in this case
-
 # Define BB size in mm (using a typical BB size, but adjust as needed)
 bb_size_mm = 15
 
@@ -103,7 +89,7 @@ gantry_tilt = 0.00663411039557  # Based on the metadata provided
 gantry_sag = 0.0096325257373   # Simulate some sag
 
 # Optional jitter in mm for randomness in BB positioning (if desired)
-jitter_mm = 0.1  # Example jitter in mm
+jitter_mm = 0  # Example jitter in mm
 
 # Clean directory flag (whether to clean output directory before generating new images)
 clean_dir = True
@@ -113,13 +99,13 @@ align_to_pixels = True
 
 # Call the function to generate images
 generated_images = generate_winstonlutz_multi_bb_multi_field(
-    simulator=simulator,  # The image simulator
-    field_layer=field_layer,  # The primary field layer simulating radiation
+    simulator=image_generator.simulators.CustomSim(sid=1000),  # The image simulator
+    field_layer=layers.PerfectFieldLayer,  # The primary field layer simulating radiation
+    final_layers=[layers.GaussianFilterLayer(sigma_mm=1),],  # Layers to apply after generating the primary field and BB layer
     dir_out=dir_out,  # The directory to save the images to
     field_offsets=field_offsets,  # A list of lists containing the shift of the fields
     bb_offsets=bb_offsets,  # A list of lists containing the shift of the BBs from iso
     field_size_mm=field_size_mm,  # The field size of the radiation field in mm
-    final_layers=final_layers,  # Layers to apply after generating the primary field and BB layer
     bb_size_mm=bb_size_mm,  # The size of the BB
     image_axes=image_axes,  # List of axis values for the images
     gantry_tilt=gantry_tilt,  # The tilt of the gantry in degrees
