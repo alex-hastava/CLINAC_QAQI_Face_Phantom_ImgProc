@@ -1,118 +1,83 @@
-from pylinac.core.image_generator import layers, generate_winstonlutz_multi_bb_multi_field
-from pylinac.core import image_generator
 import numpy as np
+import random
+from pylinac.core import image_generator
+from pylinac.core.image_generator import AS1200Image
+from pylinac.core.image_generator.layers import PerfectFieldLayer, GaussianFilterLayer
+from pylinac.core.image_generator import simulators, generate_winstonlutz_multi_bb_multi_field
 
-# Define field size in mm (e.g., based on your DICOM metadata, this might vary)
-field_size_mm = (140, 140)  # Example field size
+# Define field size in mm scaled down by a factor of 1/2
+FIELD_SIZE_MM = (20, 20)
 
-# Output directory to save the images
-dir_out = "C:/Users/ahastava/PycharmProjects/CLINAC_QAQI_Face_Phantom_ImgProc/wl_images"
+# Define BB size in mm
+BB_SIZE_MM = 7.5
 
-# Define the field offsets, e.g., shifting the field by some amount
-field_offsets = [[0, 0, 0], [0, 0, 0]]
+# Output directory
+DIR_OUT = r"C:/Users/ahastava/PycharmProjects/CLINAC_QAQI_Face_Phantom_ImgProc/wl_images"
 
+# Define field offsets
+FIELD_OFFSETS = [[0, 0, 0], [0, 0, 0]]
+
+# Load BB pixel coordinates
 circles = np.load("bb_pixel_coords.npy")
 
-# Define BB offsets: using the ball bearing pixel data converted to mm
-# Convert to a list of tuples (x_pixel, y_pixel, diameter_mm)
-circle_data = [(int(x), int(y), 2 * r) for x, y, r in circles]
-
-print("Loaded Circle Data:", circle_data)
-
 # Pixel spacing in mm/pixel
-pixel_spacing = 0.336  # Example pixel spacing (mm per pixel)
+PIXEL_SPACING = 0.336
 
-# Define the DICOM RT Image Position (assuming it corresponds to isocenter)
-rt_image_position = (2/3 * (0.336 * (1280/2)), 0, 2/3 * (0.336 * (1280/2)))  # Isocenter position, (x, y, z) in mm
+# Define RT Image Position at isocenter
+RT_IMAGE_POSITION = (2/3 * (PIXEL_SPACING * (1280/2)), 2/3 * (PIXEL_SPACING * (1280/2)), 2/3 * (PIXEL_SPACING * (1280/2)))
 
-# Convert pixel positions to mm and calculate the 3D offsets for the BBs
-bb_offsets = []
-for x, z, diameter in circle_data:
-    # Convert center coordinates from pixels to mm
-    x_mm = 2/3 * (x * pixel_spacing)
-    y_mm = 0  # You might want to adjust this if the y-coordinate is actually needed
-    z_mm = 2/3 * (z * pixel_spacing)
-
-    # Calculate the 3D offsets from the isocenter
-    x_offset = x_mm - rt_image_position[0]
-    y_offset = y_mm - rt_image_position[1]
-    z_offset = z_mm - rt_image_position[2]
-
-    # The diameter is already in mm, so we use it directly as the BB size
-    bb_size_mm = diameter
-
-    # Append the BB offset and the BB size to the list
-    bb_offsets.append({
-        "offset_left_mm": x_offset,  # X-axis offset (left-right)
-        "offset_up_mm": y_offset,    # Y-axis offset (up-down)
-        "offset_in_mm": z_offset,    # Z-axis offset (in-out, assuming 0 here)
-        "bb_size_mm": bb_size_mm,    # Diameter in mm
-        "rad_size_mm": 13.5,         # Radiation radius surrounding ROI in mm
-    })
+bb_offsets = [
+    {
+        "offset_left_mm": (2/3) * (x * PIXEL_SPACING) - RT_IMAGE_POSITION[0],
+        "offset_up_mm": (2/3) * (((x + z) / 2) * PIXEL_SPACING - RT_IMAGE_POSITION[1]) - (index * 10),
+        "offset_in_mm": (2/3) * (z * PIXEL_SPACING) - RT_IMAGE_POSITION[2]
+    }
+    for index, (x, z, _) in enumerate(circles, start=1)
+]
 
 # Convert list of dicts to structured array
 dtype = np.dtype([
     ("offset_left_mm", np.float32),
     ("offset_up_mm", np.float32),
-    ("offset_in_mm", np.float32),
-    ("bb_size_mm", np.float32),
-    ("rad_size_mm", np.float32)
+    ("offset_in_mm", np.float32)
 ])
 
-# Convert list of dictionaries into a structured array
 bb_array = np.array(
-    [(bb["offset_left_mm"], bb["offset_up_mm"], bb["offset_in_mm"], bb["bb_size_mm"], bb["rad_size_mm"]) for bb in bb_offsets],
+    [(bb["offset_left_mm"], bb["offset_up_mm"], bb["offset_in_mm"]) for bb in bb_offsets],
     dtype=dtype
 )
 
-# Save structured array as .npy
+# Save structured array
 np.save("my_special_phantom_bbs.npy", bb_array)
-
 print("Saved my_special_phantom_bbs.npy successfully!")
+print(bb_array)
 
-# Now bb_offsets contains the 3D offsets of the ball bearings in mm, relative to the isocenter.
-# print(bb_offsets)
-
-# Define BB size in mm (using a typical BB size, but adjust as needed)
-bb_size_mm = 15
-
-# Image axes: define multiple gantry angles for simulation
-image_axes = [
-    (0, 0, 0),              # Gantry angle 0
-    (90, 0, 0),             # Gantry angle 90
-    (180, 0, 0),            # Gantry angle 180
-    (270, 0, 0)             # Gantry angle 270
+# Define image acquisition angles
+IMAGE_AXES = [
+    (0, 0, 0),
+    #(90, 0, 0),
+    (180, 0, 0)#,
+    #(270, 0, 0)
 ]
 
-# Gantry tilt and sag to simulate effects (from your metadata, slight tilt or sag)
-gantry_tilt = 0.00663411039557  # Based on the metadata provided
-gantry_sag = 0.0096325257373   # Simulate some sag
+# Gantry effects
+GANTRY_TILT = 0.00663411039557
+GANTRY_SAG = 0.0096325257373
 
-# Optional jitter in mm for randomness in BB positioning (if desired)
-jitter_mm = 0  # Example jitter in mm
+as1200 = AS1200Image()  # this will set the pixel size and shape automatically
+field_layer = image_generator.layers.PerfectFieldLayer
 
-# Clean directory flag (whether to clean output directory before generating new images)
-clean_dir = True
-
-# Alignment to pixels (ensure the BB is aligned correctly with pixels)
-align_to_pixels = True
-
-# Call the function to generate images
+# Generate WL images
 generated_images = generate_winstonlutz_multi_bb_multi_field(
-    simulator=image_generator.simulators.CustomSim(sid=1000),  # The image simulator
-    field_layer=layers.PerfectFieldLayer,  # The primary field layer simulating radiation
-    final_layers=[layers.GaussianFilterLayer(sigma_mm=1),],  # Layers to apply after generating the primary field and BB layer
-    dir_out=dir_out,  # The directory to save the images to
-    field_offsets=field_offsets,  # A list of lists containing the shift of the fields
-    bb_offsets=bb_offsets,  # A list of lists containing the shift of the BBs from iso
-    field_size_mm=field_size_mm,  # The field size of the radiation field in mm
-    bb_size_mm=bb_size_mm,  # The size of the BB
-    image_axes=image_axes,  # List of axis values for the images
-    gantry_tilt=gantry_tilt,  # The tilt of the gantry in degrees
-    gantry_sag=gantry_sag,  # The sag of the gantry
-    clean_dir=clean_dir,  # Whether to clean out the output directory
-    jitter_mm=jitter_mm  # The amount of jitter to add to the BB location in mm
+    simulator=simulators.AS1200Image(sid=1500.03497428306),
+    field_layer=field_layer,
+    final_layers=[GaussianFilterLayer(sigma_mm=0.2)],
+    dir_out=DIR_OUT,
+    field_offsets=tuple(tuple(bb.values()) for bb in bb_offsets),
+    field_size_mm=FIELD_SIZE_MM,
+    bb_offsets=bb_offsets,
+    clean_dir=True
 )
 
-# Output the generated image paths
+# Output generated images
 print(generated_images)
