@@ -18,7 +18,7 @@ DIR_OUT = r"C:/Users/ahastava/PycharmProjects/CLINAC_QAQI_Face_Phantom_ImgProc/w
 FIELD_OFFSETS = [[0, 0, 0], [0, 0, 0]]
 
 # Load BB pixel coordinates
-circles = np.load("bb_pixel_coords.npy")
+circles = np.load("wl_bb_pixel_coords.npy")
 
 # Pixel spacing in mm/pixel
 PIXEL_SPACING = 0.336
@@ -48,8 +48,8 @@ bb_array = np.array(
 )
 
 # Save structured array
-np.save("my_special_phantom_bbs.npy", bb_array)
-print("Saved my_special_phantom_bbs.npy successfully!")
+np.save("wl_special_phantom_bbs_mm.npy", bb_array)
+print("Saved wl_special_phantom_bbs_mm.npy successfully!")
 print(bb_array)
 
 # Define image acquisition angles

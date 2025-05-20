@@ -140,7 +140,7 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
             circle_data.append([offset_x, offset_y, radius_mm])
 
     # Save the circle data (offsets and radius) to a .npy file
-    np.save("my_special_phantom_bbs.npy", circle_data)  # Save offsets and radius data
+    np.save("wl_special_phantom_bbs_mm.npy", circle_data)  # Save offsets and radius data
 
     distance_unit = f"Units: mm (diameter)"
     cv2.putText(color_morphed_image, distance_unit, (450, 1100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3)
@@ -163,7 +163,7 @@ def detect_circles_and_rectangle(morphed_image, color_morphed_image, dicom_data)
 
 def main():
     # Rad_Onc_PC
-    dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_MeV_Scan.dcm"
+    dicom_path = "C:/Users/ahastava/PycharmProjects/Face_Phantom_6MeV_Scan.dcm"
     save_path = "C:/Users/ahastava/PycharmProjects/contour_output.png"
 
     # Process DICOM image

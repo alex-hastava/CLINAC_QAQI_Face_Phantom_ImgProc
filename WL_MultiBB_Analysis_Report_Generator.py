@@ -4,10 +4,12 @@ import numpy as np
 import plotly.io as pio
 
 # Define the path to the Winston-Lutz images
-wl_path = r"C:/Users/ahastava/PycharmProjects/CLINAC_QAQI_Face_Phantom_ImgProc/wl_images"
+#wl_path = r"C:/Users/ahastava/PycharmProjects/CLINAC_QAQI_Face_Phantom_ImgProc/wl_images"
+
+wl_path = r"C:/Users/Hasta/PycharmProjects/CLINAC_QAQI_Face_Phantom_ImgProc/wl_images"
 
 # Load BB coordinates from file
-bb_array = np.load("my_special_phantom_bbs.npy")
+bb_array = np.load("wl_special_phantom_bbs_mm.npy")
 
 # Convert my_special_phantom_bbs into a tuple of BBConfig objects
 my_special_phantom_bbs = tuple(
