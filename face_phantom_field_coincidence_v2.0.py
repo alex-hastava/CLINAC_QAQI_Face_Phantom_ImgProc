@@ -1,3 +1,16 @@
+# face_phantom_field_coincidence_v2.0.py
+# ------------------------------------------------------
+# PyLinac Integration Module - Light & Radiation Field Coincidence QA
+# Developed by: Alex Hastava
+#
+# Description:
+# This script performs field coincidence quality assurance by comparing the light field
+# (constructed from BB marker detection) and radiation field (via PyLinac's FieldAnalysis)
+# on EPID-acquired DICOM images. Results are output to a summary PDF and CSV.
+#
+# Requirements: OpenCV, NumPy, PyDICOM, PyLinac, Matplotlib
+# Hardware: Requires use of the proprietary FacePhantom device for BB marker detection
+
 import os
 import re
 import cv2
@@ -9,7 +22,6 @@ from pylinac import Edge, FieldAnalysis, Centering, Interpolation, Protocol
 from matplotlib import pyplot as plt
 from matplotlib import image as mpimg
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.table import Table
 import csv
 import warnings
 
@@ -18,6 +30,7 @@ warnings.filterwarnings("ignore", message=".*missing from font.*", category=User
 csv_results = []
 
 def enhance_image(img_array):
+    """Enhance DICOM image for BB detection using CLAHE and Gaussian blur."""
     img = img_array.astype('uint16')
     img_norm = cv2.normalize(img, None, 0, 255, cv2.NORM_MINMAX).astype('uint8')
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -26,18 +39,16 @@ def enhance_image(img_array):
     return img_blur
 
 def find_bb_markers(enhanced_img, px_spacing, sid, sod):
+    """Detect BBs using Hough Circle Transform, scaled to expected size at SID."""
     bb_radius_mm = 7.5
     scale_imgr = sid / sod
     effective_radius_mm = bb_radius_mm * scale_imgr
 
-    px_size = px_spacing[0]  # assuming square pixels; adjust if needed
+    px_size = px_spacing[0]  # assume square pixels
     radius_px = effective_radius_mm / px_size
-
     min_radius_px = int(radius_px * 0.85)
     max_radius_px = int(radius_px * 1.15)
-    min_dist_px = int(radius_px * 2.0 * 0.9)  # slightly less than full BB-to-BB spacing
-
-    print(f"[Scaled] radius: {radius_px:.2f}px → min={min_radius_px}, max={max_radius_px}, minDist={min_dist_px}")
+    min_dist_px = int(radius_px * 2.0 * 0.9)
 
     circles = cv2.HoughCircles(
         enhanced_img,
@@ -55,6 +66,7 @@ def find_bb_markers(enhanced_img, px_spacing, sid, sod):
     return []
 
 def extract_metadata(ds):
+    """Extract relevant DICOM metadata fields."""
     return {
         'RT Image Description': ds.get('RTImageDescription', ''),
         'Radiation Machine Name': ds.get('RadiationMachineName', ''),
@@ -63,6 +75,7 @@ def extract_metadata(ds):
     }
 
 def process_and_plot(filepath, pdf):
+    """Process a single DICOM file: analyze fields, overlay visuals, and write to PDF."""
     ds = pydicom.dcmread(filepath)
     img = ds.pixel_array.astype(float)
     px_spacing = ds.get('PixelSpacing', ds.get('ImagePlanePixelSpacing', [1.0, 1.0]))
@@ -74,28 +87,22 @@ def process_and_plot(filepath, pdf):
     gantry_angle = float(ds.get("GantryAngle", 0.0))
 
     def extract_couch_angle_from_filename(filepath):
+        """Determine couch angle from filename tag."""
         filename = os.path.basename(filepath).lower()
-
-        # Define pattern and map to numeric angles
         angle_map = {
-            "45_couch": 45,
-            "90_couch": 90,
-            "180_couch": 180,
-            "45m_couch": -45,
-            "90m_couch": -90,
-            "180m_couch": -180,
+            "45_couch": 45, "90_couch": 90, "180_couch": 180,
+            "45m_couch": -45, "90m_couch": -90, "180m_couch": -180,
         }
-
         for key, angle in angle_map.items():
             if key in filename:
                 return angle
+        return 0.0
 
-        return 0.0  # Default
-    couchtranslational_angle = extract_couch_angle_from_filename(filepath)
-
-    scale_imgr = sid / sod
+    couch_angle = extract_couch_angle_from_filename(filepath)
+    scale_imgr = sid / sod  # EPID/SAD
     scale_couch = 1.0 / scale_imgr
 
+    # Radiation field analysis (in SAD space)
     analyzer = FieldAnalysis(filepath)
     analyzer.analyze(
         centering=Centering.BEAM_CENTER,
@@ -109,16 +116,16 @@ def process_and_plot(filepath, pdf):
     rad_cx_mm = rad_cx_px * px_spacing[1]
     rad_cy_mm = rad_cy_px * px_spacing[0]
 
-    fig, axs = plt.subplots(2, 1, figsize=(9, 12), gridspec_kw={'height_ratios': [9, 3], 'hspace': 0.5})
-    ax_img, ax_table = axs
+    fig, (ax_img, ax_table) = plt.subplots(2, 1, figsize=(9, 12), gridspec_kw={'height_ratios': [9, 3], 'hspace': 0.5})
     ax_img.imshow(img, cmap='gray')
     ax_img.plot(rad_cx_px, rad_cy_px, marker='+', color='magenta', markersize=10, markeredgewidth=2, label='Radiation Center')
 
     csv_row = {'Filename': os.path.basename(filepath)}
-    max_diff = 0
     table_data = []
     col_labels = ['Edge', 'LF→LF-Center (mm)', 'RF→CAX (mm)', 'Δ (mm)', 'Result']
+    max_diff = 0
 
+    # BB marker detection and pairing
     markers = find_bb_markers(enhanced, px_spacing, sid, sod)
     if markers is None or len(markers) < 4:
         print(f"Insufficient BBs: {filepath}")
@@ -130,6 +137,7 @@ def process_and_plot(filepath, pdf):
     right = sorted(markers, key=lambda m: m[0])[-2:]
 
     def shifted_midpoint_mm(pair, axis, direction):
+        """Return midpoint shifted 15mm in a given direction (SID plane)."""
         x_px = np.mean([p[0] for p in pair])
         y_px = np.mean([p[1] for p in pair])
         shift_mm = 15
@@ -141,6 +149,7 @@ def process_and_plot(filepath, pdf):
             y_mm = y_px * px_spacing[0] + direction * shift_mm * scale_imgr
         return x_mm, y_mm
 
+    # Get light field edges (in mm @ SID)
     corners_mm = {
         'Top': shifted_midpoint_mm(top, 'y', -1),
         'Bottom': shifted_midpoint_mm(bottom, 'y', 1),
@@ -148,11 +157,12 @@ def process_and_plot(filepath, pdf):
         'Right': shifted_midpoint_mm(right, 'x', 1),
     }
 
-    # Light field center
+    # Light field center (in mm @ SID)
     lf_cx_mm = (corners_mm['Left'][0] + corners_mm['Right'][0]) / 2
     lf_cy_mm = (corners_mm['Top'][1] + corners_mm['Bottom'][1]) / 2
     ax_img.plot(lf_cx_mm / px_spacing[1], lf_cy_mm / px_spacing[0], marker='x', color='cyan', label='LF Center')
 
+    # Radiation edges (in mm @ SAD)
     rad_edges = {
         'Left': rad_cx_mm - results.beam_center_to_left_mm,
         'Right': rad_cx_mm + results.beam_center_to_right_mm,
@@ -160,64 +170,66 @@ def process_and_plot(filepath, pdf):
         'Bottom': rad_cy_mm + results.beam_center_to_bottom_mm,
     }
 
+    # Compare LF and RF edge distances to respective centers
     for label, (lf_x_mm, lf_y_mm) in corners_mm.items():
-        lf_to_lfc = np.hypot(lf_x_mm - lf_cx_mm, lf_y_mm - lf_cy_mm) * scale_couch
-        if label in ['Left', 'Right']:
-            rf_to_center = abs(rad_edges[label] - rad_cx_mm)
-        else:
-            rf_to_center = abs(rad_edges[label] - rad_cy_mm)
-        delta = abs(lf_to_lfc - rf_to_center)
+        lf_to_center = np.hypot(lf_x_mm - lf_cx_mm, lf_y_mm - lf_cy_mm) * scale_couch  # scaled to SAD
+        rf_to_center = abs(rad_edges[label] - (rad_cx_mm if label in ['Left', 'Right'] else rad_cy_mm))
+        delta = abs(lf_to_center - rf_to_center)
         result = 'PASS' if delta <= 2.0 else 'FAIL'
         max_diff = max(max_diff, delta)
-
         ax_img.plot(lf_x_mm / px_spacing[1], lf_y_mm / px_spacing[0], marker='x',
-                    color='#ff7f0e' if result == 'PASS' else '#d62728',
-                    markersize=9, markeredgewidth=2, label=f"{label} Edge")
-        table_data.append([label, f"{lf_to_lfc:.2f}", f"{rf_to_center:.2f}", f"{delta:.2f}", result])
+                    color='#ff7f0e' if result == 'PASS' else '#d62728', markersize=9, markeredgewidth=2)
+        table_data.append([label, f"{lf_to_center:.2f}", f"{rf_to_center:.2f}", f"{delta:.2f}", result])
 
-    # Light field center to radiation center
+    # Center offset distance
     center_dist = np.hypot(rad_cx_mm - lf_cx_mm, rad_cy_mm - lf_cy_mm) * scale_couch
     table_data.append(["Center Δ", f"{center_dist:.2f}", "-", "-", "PASS" if center_dist <= 2.0 else "FAIL"])
 
-    # Draw boxes
     def draw_box(ax, pts, color, label):
         box = pts + [pts[0]]
         ax.plot(*zip(*box), linestyle='--', linewidth=1.5, color=color, label=label)
 
-    # Light field box points (in mm, then converted to px)
+    # Construct and draw LF box (at SID)
     lf_box_pts_mm = [
-        (corners_mm['Left'][0], corners_mm['Top'][1]),  # Top-left
-        (corners_mm['Right'][0], corners_mm['Top'][1]),  # Top-right
-        (corners_mm['Right'][0], corners_mm['Bottom'][1]),  # Bottom-right
-        (corners_mm['Left'][0], corners_mm['Bottom'][1])  # Bottom-left
+        (corners_mm['Left'][0], corners_mm['Top'][1]),
+        (corners_mm['Right'][0], corners_mm['Top'][1]),
+        (corners_mm['Right'][0], corners_mm['Bottom'][1]),
+        (corners_mm['Left'][0], corners_mm['Bottom'][1])
     ]
-    print(lf_box_pts_mm)
     lf_box_pts_px = [(x / px_spacing[1], y / px_spacing[0]) for x, y in lf_box_pts_mm]
-    print(lf_box_pts_px)
 
-    # Radiation field box points (same order: TL, TR, BR, BL)
+    # Construct RF box from midlines (SAD → scaled to SID)
+    rad_edge_pts_mm = {
+        'Top':    (rad_cx_mm, rad_cy_mm - results.beam_center_to_top_mm),
+        'Bottom': (rad_cx_mm, rad_cy_mm + results.beam_center_to_bottom_mm),
+        'Left':   (rad_cx_mm - results.beam_center_to_left_mm, rad_cy_mm),
+        'Right':  (rad_cx_mm + results.beam_center_to_right_mm, rad_cy_mm),
+    }
     rf_box_pts_mm = [
-        (results.beam_center_to_left_mm, results.beam_center_to_top_mm),  # Top-left
-        (results.beam_center_to_right_mm, results.beam_center_to_top_mm),  # Top-right
-        (results.beam_center_to_right_mm, results.beam_center_to_bottom_mm),  # Bottom-right
-        (results.beam_center_to_left_mm, results.beam_center_to_bottom_mm)  # Bottom-left
+        (rad_edge_pts_mm['Left'][0], rad_edge_pts_mm['Top'][1]),
+        (rad_edge_pts_mm['Right'][0], rad_edge_pts_mm['Top'][1]),
+        (rad_edge_pts_mm['Right'][0], rad_edge_pts_mm['Bottom'][1]),
+        (rad_edge_pts_mm['Left'][0], rad_edge_pts_mm['Bottom'][1])
     ]
-    print(rf_box_pts_mm)
-    rf_box_pts_px = [(x / px_spacing[1], y / px_spacing[0]) for x, y in rf_box_pts_mm]
-    print(rf_box_pts_px)
+    rf_box_pts_mm_scaled = [
+        (rad_cx_mm + (x - rad_cx_mm) * scale_imgr, rad_cy_mm + (y - rad_cy_mm) * scale_imgr)
+        for (x, y) in rf_box_pts_mm
+    ]
+    rf_box_pts_px = [(x / px_spacing[1], y / px_spacing[0]) for x, y in rf_box_pts_mm_scaled]
 
     draw_box(ax_img, lf_box_pts_px, 'blue', 'Light Field Boundary')
     draw_box(ax_img, rf_box_pts_px, 'magenta', 'Radiation Field Boundary')
 
+    # Draw BBs
     for (x, y, r) in markers:
         ax_img.add_patch(plt.Circle((x, y), r, edgecolor='lime', fill=False, linewidth=1.5))
 
+    # Table formatting
     ax_table.axis('off')
     table = ax_table.table(cellText=table_data, colLabels=col_labels, loc='center', cellLoc='center')
     table.auto_set_font_size(False)
     table.set_fontsize(9.5)
     table.scale(1.1, 2.5)
-
     for (row, col), cell in table.get_celld().items():
         if row == 0:
             cell.set_text_props(weight='bold')
@@ -225,38 +237,25 @@ def process_and_plot(filepath, pdf):
             val = cell.get_text().get_text()
             cell.set_facecolor('#d0f0c0' if val == 'PASS' else '#f8d7da')
 
+    # Final layout and save
     ax_img.legend(loc='lower right', fontsize=7)
     ax_img.axis('off')
     fig.subplots_adjust(left=0.1, right=0.9, top=0.60, bottom=0.06)
     fig.suptitle(
         f"Field Coincidence QA: {os.path.basename(filepath)}\n"
         f"Machine: {metadata['Radiation Machine Name']} | Energy: {metadata['RT Image Description']}\n"
-        f"Gantry: {gantry_angle:f}° | Couch: {couchtranslational_angle:f}° | "
-        f"Pixel Spacing: {px_spacing[1]:.3f} mm (X), {px_spacing[0]:.3f} mm (Y)",
+        f"Gantry: {gantry_angle:.1f}° | Couch: {couch_angle:.1f}° | Pixel Spacing: {px_spacing[1]:.3f} mm (X), {px_spacing[0]:.3f} mm (Y)",
         fontsize=10, y=0.91
-    )
-
-    logo_path = 'SBM_logo.jpg'
-    if os.path.exists(logo_path):
-        logo = mpimg.imread(logo_path)
-        fig.figimage(logo, xo=30, yo=int(fig.bbox.ymax) - 70, alpha=1, zorder=10)
-
-    fig.text(
-        0.11, 0.21,
-        'LF→LF-Center = light edge to LF center; RF→CAX = radiation edge to center\n'
-        'Center Δ = offset between light and radiation field centers',
-        fontsize=9.5, ha='left'
     )
 
     pdf.savefig(fig)
     plt.close(fig)
-
     csv_row['QA Result'] = 'PASS' if max_diff <= 2.0 else 'FAIL'
     csv_row['Max Delta (mm)'] = f"{max_diff:.2f}"
     csv_results.append(csv_row)
 
-
 def main():
+    """Main entry: process user-selected DICOMs and output PDF/CSV."""
     root = tk.Tk()
     root.withdraw()
     files = filedialog.askopenfilenames(filetypes=[("DICOM files", "*.dcm")], title="Select DICOM QA Images")
