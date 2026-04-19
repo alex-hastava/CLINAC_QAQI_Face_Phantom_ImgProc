@@ -1,2 +1,7 @@
 Filename,QA Result,Max Delta (mm)
+1-10x10.dcm,PASS,0.25
+2-10x10_45_couch.dcm,PASS,0.80
+3-10x10_90_couch.dcm,PASS,0.80
+4-10x10_45m_couch.dcm,PASS,0.80
+5-10x10_90m_couch.dcm,PASS,0.80
 Face_Phantom_6MeV_Scan.dcm,PASS,0.17
